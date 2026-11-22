@@ -3,14 +3,18 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from app.config import LEGACY_SPEC, SPEC
+from app.errors import SurveyProblem
 from app.main import create_app
+from app.modules.ledger.identity import canonical, identity, sha
 from app.modules.ledger.service import archive
 from app.modules.ledger.storage import Archive
+from app.pipeline import run
 
 
 def test_create_manifest(client):
     answer=client.post('/api/runs',json={'sample':'dirty'})
-    assert answer.status_code==201 and answer.json['manifest']['version']=='survey-2026.1'
+    assert answer.status_code==201 and answer.json['manifest']['version']==SPEC
     assert set(answer.json['manifest']['files'])=={'returns','frame'}
 
 
@@ -48,3 +52,40 @@ def test_same_source_concurrent(tmp_path,tables):
 def test_missing_run(client):
     response=client.post('/api/runs/missing/rerun')
     assert (response.status_code,response.json['code'])==(404,'NO_RUN')
+
+
+def seed_legacy(store,tables):
+    results=run(tables,version=LEGACY_SPEC)
+    key,hashes=identity(tables,LEGACY_SPEC)
+    manifest=dict(id=key,files=hashes,version=LEGACY_SPEC,created='2026-01-01T00:00:00+00:00',
+                  result_sha256=sha(canonical(results)),elapsed_ms=1)
+    store.add(manifest,tables,results)
+    return manifest
+
+
+def test_legacy_rerun_keeps_original_rule(tmp_path,tables):
+    store=Archive(tmp_path/'legacy.db')
+    manifest=seed_legacy(store,tables)
+    assert manifest['version']==LEGACY_SPEC
+    out=archive(store,tables,manifest)
+    assert out['reused'] is True and out['id']==manifest['id']
+    assert store.read(manifest['id'])[2]['allocation']['totals']=={'direct':101,'transfer':83,'other':66}
+
+
+def test_legacy_and_current_rules_coexist(tmp_path,tables):
+    store=Archive(tmp_path/'both.db')
+    legacy=seed_legacy(store,tables)
+    fresh=archive(store,tables)
+    assert fresh['id']!=legacy['id'] and len(store.recent())==2
+    assert store.read(fresh['id'])[2]['allocation']['totals']=={'direct':100,'transfer':83,'other':67}
+    assert store.read(legacy['id'])[2]['allocation']['totals']=={'direct':101,'transfer':83,'other':66}
+
+
+def test_unbalanced_not_archived(tmp_path,tables,monkeypatch):
+    store=Archive(tmp_path/'gate.db')
+    results=run(tables)
+    results['balance']['balanced']=False
+    monkeypatch.setattr('app.modules.ledger.service.run',lambda *a,**k:results)
+    with pytest.raises(SurveyProblem) as exc:
+        archive(store,tables)
+    assert exc.value.code=='UNBALANCED' and store.recent()==[]

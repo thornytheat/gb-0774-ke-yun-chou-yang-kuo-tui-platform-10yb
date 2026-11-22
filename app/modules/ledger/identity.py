@@ -12,6 +12,6 @@ def sha(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def identity(inputs):
+def identity(inputs, version=SPEC):
     hashes = {key:sha(text) for key,text in inputs.items()}
-    return sha(canonical({'files':hashes,'version':SPEC})), hashes
+    return sha(canonical({'files':hashes,'version':version})), hashes

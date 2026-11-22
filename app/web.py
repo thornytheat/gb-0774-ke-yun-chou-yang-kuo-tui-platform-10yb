@@ -39,5 +39,5 @@ def desk(tab='balance'):
     shifts = [float(abs(Fraction(row['shift_pp']))) for row in result['balance']['bias'].values() if row['shift_pp'] is not None]
     scale = max([5, *(5 * (int(value / 5) + 1) for value in shifts)])
     return render_template('base.html',tab=tab,tabs=TABS,sample=sample,key=key,manifest=manifest,data=result,layer=layer,
-                           spec=SPEC,choices=CHOICES,reasons=REASONS,decimal=decimal_text,maximum=scale,
+                           spec=manifest['version'] if manifest else SPEC,choices=CHOICES,reasons=REASONS,decimal=decimal_text,maximum=scale,
                            fraction=Fraction, proof=proof, recent=storage().recent() if tab=='archive' else [])

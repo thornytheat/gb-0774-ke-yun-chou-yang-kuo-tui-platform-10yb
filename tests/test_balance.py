@@ -17,8 +17,16 @@ def test_within_layer_conserves(dirty):
 
 
 def test_bias_exact(dirty):
-    assert dirty['balance']['bias']['direct']=={'raw':'1/3','adjusted':'101/250','shift_pp':'106/15'}
-    assert dirty['balance']['bias']['other']['shift_pp']=='-104/15'
+    assert dirty['balance']['bias']['direct']=={'raw':'1/3','adjusted':'2/5','shift_pp':'20/3'}
+    assert dirty['balance']['bias']['other']['shift_pp']=='-98/15'
+
+
+def test_quota_gaps_within_one(dirty):
+    quota=dirty['balance']['quota']
+    assert quota['city']=={'direct':'0','transfer':'-1/3','other':'1/3'}
+    assert quota['layers']['城北']=={'direct':'-1/3','transfer':'-1/3','other':'2/3'}
+    assert quota['layers']['枢纽']=={'direct':'1/3','transfer':'0','other':'-1/3'}
+    assert quota['layers']['末班']=={'direct':'0','transfer':'0','other':'0'}
 
 
 def test_no_zero_comparison(dirty):
@@ -38,3 +46,13 @@ def test_detect_category_swap_even_when_population_conserves(dirty):
     actual=review(dirty['returns'],dirty['frame'],dirty['weights'],dirty['allocation'])
     assert actual['population_delta']==0 and not actual['balanced']
     assert actual['category_delta']=={'direct':-1,'transfer':0,'other':1}
+
+
+def test_detect_city_quota_breach(dirty):
+    dirty['allocation']['totals']['direct']+=1
+    dirty['allocation']['totals']['transfer']-=1
+    dirty['allocation']['layers']['城北']['integers']['direct']+=1
+    dirty['allocation']['layers']['城北']['integers']['transfer']-=1
+    actual=review(dirty['returns'],dirty['frame'],dirty['weights'],dirty['allocation'])
+    assert actual['population_delta']==0 and not any(actual['category_delta'].values())
+    assert actual['quota']['city']['direct']=='1' and not actual['balanced']
